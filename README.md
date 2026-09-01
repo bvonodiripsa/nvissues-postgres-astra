@@ -29,23 +29,44 @@ lands in a different vector space: retrieval would get quietly worse rather
 than fail. It stays baked into the image and runs on CPU, which is affordable
 because it embeds one query, not a corpus.
 
-## Choosing the models
+## The models, and the one setting that matters
 
-Inference Hub model ids are provider-prefixed and **entitlement-dependent** —
-what a key can call differs per key and changes over time. The catalogue at
-inference.nvidia.com is a browser, not a contract. `config.yaml` therefore
-gives no default for `IH_ANSWER_MODEL` or `IH_EXPAND_MODEL`: a wrong id fails
-as a 401 that the client catches and logs as a warning, and unset fails loudly
-at the first question instead, which is the behaviour to want.
+Defaults are `nvidia/qwen/qwen3-5-397b-a17b` for the answer and
+`nvidia/qwen/qwen3.5-9b` for expansion — the same Qwen3.5 the H100 deployment
+served, now hosted. Measured on a 6,881-token prompt against a Non-Prod
+Service key, 2026-08-31:
+
+| Model | Thinking on | Thinking off |
+| --- | --- | --- |
+| `qwen3-5-397b-a17b` | 9–15s, **empty answer** | **0.8s** |
+| `qwen3.6-27b` | 16–40s | 1.7s |
+| `qwen3.5-9b` | — | 0.7s |
+| `qwen3.5-0.8b` | — | 0.5s |
+| `qwen3.5-122b-a10b` | 61s | not measured |
+
+**Every one of these is a reasoning model**, returning chain-of-thought in
+`reasoning_content` and the answer in `content`, with one shared token budget
+that reasoning consumes first. With thinking on, the 397B spent all 2,000
+tokens producing 8,038 characters of reasoning, hit the length limit, and
+returned a *successful* response containing nothing a user would read.
+
+Thinking is off because `llm_roles.completion_kwargs` sends
+`chat_template_kwargs: {"enable_thinking": false}` for any model whose name
+contains "qwen". That code was written for the self-hosted vLLM and is exactly
+right here, since Hub ids carry the vendor in the path. If you point this at a
+non-Qwen id, check the thinking behaviour before trusting the latency.
+
+Entitlements are per-key and the catalogue moves, so re-check rather than
+assume:
 
 ```bash
 export IH_API_KEY=...                    # inference.nvidia.com/key-management
 python scripts/ih_models.py qwen nemotron llama
-python scripts/ih_models.py --chat <id>  # latency on a realistic 15k prompt
+python scripts/ih_models.py --chat <id> --no-think
 ```
 
-Pick on measured latency, not parameter count. The answer call is the single
-largest item in the response budget.
+Also on the Hub and worth knowing about later: `qwen3-reranker-0.6b` and
+`qwen3-reranker-8b`, which are the missing piece of the reranking tier.
 
 ## Configuration
 
@@ -61,8 +82,8 @@ from Vault.
 | `PGDATABASE` | `bugs_retriever_dev` |
 | `PGSSLMODE` | `require` |
 | `IH_API_KEY` | Inference Hub key — Non-Prod Service for stg, Prod for prd |
-| `IH_ANSWER_MODEL` | an id returned by `/v1/models` |
-| `IH_EXPAND_MODEL` | a small id returned by `/v1/models` |
+| `IH_ANSWER_MODEL` | optional; defaults to `nvidia/qwen/qwen3-5-397b-a17b` |
+| `IH_EXPAND_MODEL` | optional; defaults to `nvidia/qwen/qwen3.5-9b` |
 
 ## Build
 

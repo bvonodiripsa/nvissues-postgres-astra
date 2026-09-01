@@ -26,15 +26,17 @@
 #   PGPASSWORD  from Vault
 #   PGDATABASE  bugs_retriever_dev
 #   IH_API_KEY  an Inference Hub service key -- Non-Prod for stg, Prod for prd
-#   IH_ANSWER_MODEL / IH_EXPAND_MODEL   ids returned by /v1/models for that key
 #
-# The two model ids have no defaults on purpose. Inference Hub ids are
-# provider-prefixed and entitlement-dependent, the catalogue changes, and a
-# wrong id fails as a 401/404 that llm_roles catches and logs as a warning --
-# which is exactly how a broken expand role went unnoticed for weeks against
-# Azure. Run `scripts/ih_models.py` with the deployment's own key and paste
-# what it returns. Unset, the answer role fails loudly at the first question,
-# which is the behaviour to want.
+# The model ids below are defaults rather than required variables, because
+# leaving them unset is worse than wrong: `${IH_ANSWER_MODEL}` with nothing
+# behind it resolves to "", and llm_roles.model_name then falls back to its own
+# default of "gpt-5.6-sol" -- an Azure deployment name that means nothing on
+# the Hub. A verified default fails less confusingly than that.
+#
+# They are still worth re-checking per key. Hub ids are entitlement-dependent
+# and the catalogue moves; `scripts/ih_models.py` lists and times what a given
+# key can actually call. Both ids below were verified against a Non-Prod
+# Service key on 2026-08-31.
 # =============================================================================
 
 corpora:
@@ -92,7 +94,18 @@ llm:
   # unchanged -- base URL and key are the whole integration. Approved for
   # Public, Confidential and Secret data, which covers bug text.
   endpoint: "${IH_ENDPOINT:-https://inference-api.nvidia.com/v1}"
-  model: "${IH_ANSWER_MODEL}"
+  # Qwen3.5-397B, the same model the H100 deployment served locally, now as a
+  # hosted call -- and measured at 0.8s on a 6,881-token prompt, which is
+  # faster than the self-hosted one it replaces.
+  #
+  # That number depends entirely on thinking being off, and it is off because
+  # llm_roles.completion_kwargs sets `enable_thinking: False` for any model
+  # with "qwen" in its name. That code was written for the self-hosted vLLM and
+  # happens to be exactly right here, since the Hub ids carry the vendor in the
+  # path. With thinking left on, this same model spent all 2,000 tokens of
+  # budget on 8,038 characters of reasoning, hit the length limit, and returned
+  # a *successful* response with empty content. Measured, not feared.
+  model: "${IH_ANSWER_MODEL:-nvidia/qwen/qwen3-5-397b-a17b}"
   api_key: "${IH_API_KEY}"
   temperature: 0.0
   max_tokens: ${LLM_MAX_TOKENS:-1200}
@@ -108,8 +121,10 @@ llm:
       endpoint: "${IH_ENDPOINT:-https://inference-api.nvidia.com/v1}"
       # A small model on purpose. This call blocks retrieval and its job is
       # recall, not thought: the useful output is vocabulary a bug reporter
-      # would have typed.
-      model: "${IH_EXPAND_MODEL}"
+      # would have typed. 9B at 0.7s rather than the 0.8B at 0.5s, because at
+      # that margin the larger model is free and keyword quality is the whole
+      # point of the call.
+      model: "${IH_EXPAND_MODEL:-nvidia/qwen/qwen3.5-9b}"
       # Empty inherits llm.api_key. Flat, not nested -- `${A:-${B:-c}}` looks
       # like shell but the substitution stops at the first `}`, which appended
       # a stray brace to the key and 401'd every expansion call for weeks.
@@ -117,7 +132,7 @@ llm:
 
     answer:
       endpoint: "${IH_ENDPOINT:-https://inference-api.nvidia.com/v1}"
-      model: "${IH_ANSWER_MODEL}"
+      model: "${IH_ANSWER_MODEL:-nvidia/qwen/qwen3-5-397b-a17b}"
       api_key: "${IH_API_KEY}"
 
   # Note what is absent: no `reasoning.effort` on either role. That argument is
@@ -133,11 +148,15 @@ query:
   max_triples_per_node: 25
   max_source_chunks: 20
   vector_augment_k: 20
-  # 1200 rather than the Azure config's 8000, because that ceiling exists to
-  # clear what a reasoning model spends thinking before it writes a word. A
-  # plain chat model spends the budget on text, and this corpus's answers
-  # measure 77-655 tokens -- against a self-hosted Qwen, 4096 was read as
-  # permission to enumerate 86 bugs for 1,927 tokens and 36 seconds.
+  # 1200 rather than the Azure config's 8000. That ceiling exists to clear what
+  # a reasoning model spends thinking before it writes a word, and these Qwen
+  # ids *are* reasoning models -- but with thinking disabled they spend the
+  # budget on text alone. Measured on the answer model: 77 completion tokens
+  # for a question that produced 2,000 and no answer with thinking on.
+  #
+  # Raising this is therefore not a safety margin, it is a risk. Against a
+  # self-hosted Qwen, 4096 was read as permission to enumerate 86 bugs for
+  # 1,927 tokens and 36 seconds. This corpus's real answers are 77-655 tokens.
   max_answer_tokens: ${LLM_MAX_TOKENS:-1200}
   use_structured_filter: true
   structured_filter_max_bugs: 120

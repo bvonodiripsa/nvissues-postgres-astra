@@ -16,6 +16,15 @@ Stdlib only, so it also runs on a laptop or in the pod with nothing installed.
     python scripts/ih_models.py                    # every id the key can call
     python scripts/ih_models.py qwen nemotron      # filtered
     python scripts/ih_models.py --chat <model-id>  # latency, warm and cold
+    python scripts/ih_models.py --chat <id> --no-think   # thinking disabled
+
+Reasoning tokens are reported separately because on the Hub's Qwen ids they
+are most of the bill. These models return chain-of-thought in
+`reasoning_content` and the answer in `content`, and the token budget covers
+both, reasoning first -- so a budget that looks generous can be consumed
+entirely by thinking and return a *successful* response with empty content.
+That is not a hypothetical: it is what every one of these models did at 400
+tokens against a realistic prompt.
 """
 from __future__ import annotations
 
@@ -79,35 +88,60 @@ def list_models(key: str, filters: list[str]) -> int:
     return 0
 
 
-def chat(key: str, model: str) -> int:
-    print(f"  model  {model}\n  prompt {len(PROMPT):,} chars", flush=True)
+def chat(key: str, model: str, max_tokens: int = 2000,
+         think: bool = True) -> int:
+    payload = {"model": model,
+               "messages": [{"role": "user", "content": PROMPT}],
+               "temperature": 0.0, "max_tokens": max_tokens}
+    if not think:
+        # vLLM/NIM's hook for Qwen's thinking switch. Not every id honours it,
+        # which is why the reasoning-token column below is the check: a model
+        # that ignored the flag still reports the thinking it did.
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
+
+    print(f"  model  {model}\n  prompt {len(PROMPT):,} chars  "
+          f"budget {max_tokens}  thinking {'on' if think else 'off'}",
+          flush=True)
     for label in ("cold", "warm"):
         t0 = time.perf_counter()
         try:
-            out = _post("/chat/completions",
-                        {"model": model,
-                         "messages": [{"role": "user", "content": PROMPT}],
-                         "temperature": 0.0, "max_tokens": 400}, key)
+            out = _post("/chat/completions", payload, key)
         except urllib.error.HTTPError as e:
             body = e.read().decode()[:300]
             sys.exit(f"  {e.code} {e.reason}: {body}")
         el = time.perf_counter() - t0
         usage = out.get("usage") or {}
-        text = (out["choices"][0]["message"].get("content") or "").strip()
+        choice = out["choices"][0]
+        msg = choice["message"]
+        text = (msg.get("content") or "").strip()
+        # Not billed separately by the API, so infer it: the reasoning string
+        # is what the budget went to before any answer was written.
+        think_chars = len(msg.get("reasoning_content") or "")
         print(f"  {label:>4}  {el:5.1f}s  "
               f"in={usage.get('prompt_tokens', '?')} "
-              f"out={usage.get('completion_tokens', '?')}  {text[:90]!r}",
-              flush=True)
+              f"out={usage.get('completion_tokens', '?')} "
+              f"think={think_chars:>5}ch  finish={choice.get('finish_reason')}"
+              f"  {text[:70]!r}", flush=True)
+        if not text:
+            print("        ^ EMPTY ANSWER: the budget was spent before the "
+                  "model wrote anything a user would read.", flush=True)
     return 0
 
 
 def main() -> int:
     args = sys.argv[1:]
     key = _key()
+    think = "--no-think" not in args
+    args = [a for a in args if a != "--no-think"]
+    budget = 2000
+    if "--max-tokens" in args:
+        i = args.index("--max-tokens")
+        budget = int(args[i + 1])
+        del args[i:i + 2]
     if args and args[0] == "--chat":
         if len(args) < 2:
             sys.exit("--chat needs a model id")
-        return chat(key, args[1])
+        return chat(key, args[1], max_tokens=budget, think=think)
     return list_models(key, args)
 
 
