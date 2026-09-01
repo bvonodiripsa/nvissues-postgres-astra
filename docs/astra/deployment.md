@@ -126,16 +126,21 @@ select count(*) from chunks where emb is not null;
 ## 3. Getting the code to Astra
 
 Astra builds from `gitlab-master.nvidia.com` only, and this repo is on GitHub
-(`bvonodiripsa/nvissues-postgres`), so it needs a mirror. Page 2090306304:
+(`bvonodiripsa/nvissues-postgres-astra`), so it needs a mirror. Page 2090306304:
 GitLab → **New Project → Import Project → Repo by URL**, enter the GitHub HTTPS
 URL and credentials, tick **Mirror Repository**, set visibility Private. Repo
 access is per DL via Settings → LDAP Synchronization.
 
-One wrinkle: `astra-ci` looks for a `Dockerfile` at the repository root and
-scaffolds one if it finds none. Ours is `deploy/Dockerfile.astra`, so either
-point the generated `.gitlab-ci.yml` at that path or add a root symlink in the
-mirror — otherwise the pipeline builds a scaffolded image containing none of
-this app.
+`scripts/mirror_to_gitlab.ps1` does this step without the GUI, and checks the
+Dockerfile-at-root condition below on the way through. It has to run from a
+CorpNet machine: `gitlab-master` has no DNS outside, which is a routing
+problem rather than a credentials one, so no token substitutes for the VPN.
+
+`astra-ci` looks for a `Dockerfile` at the repository root and silently
+scaffolds one if it finds none — which would build an image containing none of
+this app and fail in a way that looks like a deployment problem rather than a
+build one. That is why the Dockerfile in this repo sits at the root rather than
+under `deploy/`, and why it should stay there.
 
 Prerequisites, from pages 3611337448 and 3569143825: CorpNet VPN, GitLab
 access, a team DL for ownership, and an NSpect ID (self-service at
@@ -148,20 +153,20 @@ Demo/PoC).
 curl -sSL https://gitlab-master.nvidia.com/astra/astra-skills/-/raw/stable/install-skills.sh | bash
 
 cd ~/.astra-skills/astra-ci/scripts
-uv run repo_inspect.py inspect -u https://gitlab-master.nvidia.com/<group>/nvissues-postgres
-uv run bootstrap.py bootstrap -u https://gitlab-master.nvidia.com/<group>/nvissues-postgres \
+uv run repo_inspect.py inspect -u https://gitlab-master.nvidia.com/<group>/nvissues-postgres-astra
+uv run bootstrap.py bootstrap -u https://gitlab-master.nvidia.com/<group>/nvissues-postgres-astra \
     -p astra --app-type backend --wait
 
 cd ~/.astra-skills/astra-jfrog/scripts
-uv run jfrog-cli.py list-tags nvissues-postgres
+uv run jfrog-cli.py list-tags nvissues-postgres-astra
 
 cd ~/.astra-skills/astra-deployment/scripts
-uv run deployment-create.py generate-values nvissues-postgres \
+uv run deployment-create.py generate-values nvissues-postgres-astra \
     --dl <team-dl> --owner aspiridonov@nvidia.com --vault-mode shared -e stg -o values.yaml
-uv run deployment-create.py create -r nvissues-postgres -d <team-dl> -f values.yaml -e stg --wait
+uv run deployment-create.py create -r nvissues-postgres-astra -d <team-dl> -f values.yaml -e stg --wait
 
 cd ~/.astra-skills/astra-argocd/scripts
-uv run argocd-cli.py poll nvissues-postgres -e stg
+uv run argocd-cli.py poll nvissues-postgres-astra -e stg
 ```
 
 Always `uv run`, never bare `python` or `pip install`. Authentication is
@@ -178,7 +183,7 @@ The Console at `console.astra.nvidia.com` does the same thing through a GUI
 
 ```bash
 cd ~/.astra-skills/astra-vault-management/scripts
-uv run vault-cli.py create --repo nvissues-postgres --dl <team-dl> --env stg --secrets '{
+uv run vault-cli.py create --repo nvissues-postgres-astra --dl <team-dl> --env stg --secrets '{
   "PGHOST":"wfo-bugs-retriever-dv-rw.db.nvidia.com",
   "PGPORT":"5432",
   "PGUSER":"bugs_retriever_dev_adm",
