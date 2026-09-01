@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 from typing import Any
 
 import pgconn
@@ -464,6 +465,9 @@ class PostgresBackend(_BackendBase):
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+        # The extract holds its own sync connection, which the pool knows
+        # nothing about and would otherwise outlive this call.
+        self._ix.close()
 
     async def _rows(self, sql: str, params: dict | None = None) -> list[dict]:
         """Run one statement and return dicts keyed by column name."""
@@ -701,16 +705,52 @@ class PostgresExtract:
         self._facets: list[dict[str, Any]] | None = None
         self._links: list[dict[str, Any]] | None = None
         self._counts: dict[str, int] | None = None
+        # One connection reused across the three queries below, rather than one
+        # each. They are called once per process, so the cost looked free --
+        # but each `psycopg.connect` is a TLS handshake plus authentication,
+        # and startup paid it three times before serving a request. Out of
+        # region that handshake measured anywhere from 1.2s to 7.1s, too
+        # variable to quote as a saving; the reason to do this is the
+        # deterministic part, three handshakes becoming one. Guarded by a lock
+        # because these are sync calls that FastAPI may run in a threadpool,
+        # and a psycopg connection is not safe to share otherwise.
+        self._conn = None
+        self._conn_lock = threading.Lock()
 
     def _fetch(self, sql: str) -> list[dict[str, Any]]:
         import psycopg
 
-        with psycopg.connect(self._dsn, connect_timeout=30,
-                             autocommit=True) as conn:
-            cur = conn.cursor()
-            cur.execute(sql)
-            cols = [d.name for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
+        with self._conn_lock:
+            # Two attempts, because a connection idle since startup can be
+            # closed by the server or a middlebox, and that failure surfaces on
+            # use rather than on open -- so it cannot be checked for in
+            # advance, only recovered from.
+            for attempt in (1, 2):
+                try:
+                    if self._conn is None or self._conn.closed:
+                        self._conn = psycopg.connect(
+                            self._dsn, connect_timeout=30, autocommit=True)
+                    cur = self._conn.cursor()
+                    cur.execute(sql)
+                    cols = [d.name for d in cur.description]
+                    return [dict(zip(cols, r)) for r in cur.fetchall()]
+                except psycopg.OperationalError:
+                    self._discard()
+                    if attempt == 2:
+                        raise
+        return []
+
+    def _discard(self) -> None:
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+        self._conn = None
+
+    def close(self) -> None:
+        with self._conn_lock:
+            self._discard()
 
     def bug_facets(self) -> list[dict[str, Any]]:
         if self._facets is None:

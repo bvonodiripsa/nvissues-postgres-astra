@@ -212,27 +212,55 @@ What that proves and what it does not:
 | No empty answers on any of six question shapes | Whether the WFO copy has all 999,198 rows |
 | Structured-filter, vector and link questions all answer | |
 
-**Latency needs reading carefully.** Warm mean was 19.8s per question, range
-8–38s, which is far above the 1.4–2.3s the co-located Container App achieves on
-the same corpus. That gap is distance, not the pipeline: a round trip from this
-machine to Sweden Central measures **170 ms median, and `select 1` costs the
-same as a real query**, so it is pure network rather than query work. The
-observed spread corresponds to roughly 100–120 round trips per question, which
-is the shape of this pipeline — vector search, full text, facets, links and
-chunk fetches.
+**Latency from here cannot be tuned, only bounded.** Two runs of the same
+questions against the same corpus gave means of 19.8s and 52.4s — a 2.6x spread
+with no code change between them. The cause is distance: a round trip to Sweden
+Central measures **170 ms median, and `select 1` costs the same as a real
+query**, so it is pure network rather than query work, and this pipeline issues
+roughly a hundred round trips per question. Against the 1.4–2.3s the
+co-located Container App gets on this same corpus, essentially the whole gap is
+the ocean.
 
-On Astra that term should largely vanish: PDX04 and a `usw` database are both
-on CorpNet in the same region, so the per-round-trip cost should be single-digit
-milliseconds instead of 170. The prediction is a few seconds per question, and
-the first `/v1/ask` on the deployed pod is what confirms or refutes it. If
-latency there is still tens of seconds, the cause is not distance and this
-rehearsal is the baseline to compare against.
+The practical consequence is that per-question tuning has to happen where the
+database is local, not here — from this machine the network noise is larger than
+any effect worth measuring. On Astra both ends are on CorpNet in the same
+region, so the round-trip term should mostly disappear. The first `/v1/ask` on
+the pod is the real first measurement; if it is still tens of seconds, the cause
+is not distance and these figures are the baseline to compare against.
 
-Two other measurements worth carrying forward. Startup spends ~107s warming the
-embedder, the pool and the LLM before the first question is served, so a
-readiness probe must allow for it or Kubernetes will restart the pod forever.
-And the answer model contributes only ~0.8s of the total, so nothing in the
-latency story is about the LLM.
+Worth knowing: the answer model is only ~0.8s of any of these totals, so none
+of the latency story is about the LLM.
+
+### Two deployment parameters this fixed
+
+**Memory: give the pod at least 6 GB.** Peak resident was **4.4 GB**, and the
+growth is worth knowing because most of it lands on the first structured
+question rather than at startup:
+
+| | RSS |
+| --- | --- |
+| bare interpreter | 9 MB |
+| after torch + transformers import | 121 MB |
+| + Qwen3-Embedding-0.6B on CPU | 2,160 MB |
+| + 999,198 facet rows (structured filter) | 3,803 MB |
+| + 1,070,868 link rows (link inventory) | 4,503 MB |
+
+The embedder is 2 GB of it because CPU inference holds the weights in fp32, and
+the facet and link inventories are pulled into the process whole — 5.7x what
+the 175k corpus needed. A pod sized at the usual 2 GB starts fine, answers a
+plain vector question fine, and is OOM-killed by the first question that uses
+the attribute filter. That failure would look like a crash-loop with no error
+in the app log.
+
+**Readiness probe: allow 180s.** Startup was 107s originally, and this branch
+cuts it to 7–25s by reusing one connection across the extract's three queries
+instead of opening three (`corpus_counts`, `bug_facets`, `all_bug_links` each
+opened their own; out of region a handshake ran 1.2–7.1s). Do not set the probe
+from the 7s figure: it was measured with a warm page cache and a warm model
+file, and a cold pod pulling the image will be slower. The same commit also
+fixed a real leak — `PostgresBackend.close` existed but nothing called it, so
+every shutdown dropped a pool of eight connections plus the extract's ninth
+without closing them.
 
 ## Open questions
 

@@ -825,6 +825,16 @@ class GIQueryEngine:
         ranker_http = getattr(self, "_ranker_http", None)
         if ranker_http is not None:
             await ranker_http.aclose()
+        # The retrieval backend too, which this used to leave open. It went
+        # unnoticed while the backend was Cosmos (closed above via `_cosmos`)
+        # or a local snapshot (nothing to release), but PostgresBackend holds a
+        # pool of eight server connections and its extract holds a ninth, and
+        # `PostgresBackend.close` existed with nothing calling it. Read the
+        # attribute rather than awaiting `_get_backend`, which would build a
+        # backend just to close it if no request ever arrived.
+        backend = getattr(self, "_backend", None)
+        if backend is not None and hasattr(backend, "close"):
+            await backend.close()
 
     async def answer(self, question: str) -> dict[str, Any]:
         """Enhanced GI-RAG pipeline: embed -> entities -> graph -> vector augment -> LLM."""

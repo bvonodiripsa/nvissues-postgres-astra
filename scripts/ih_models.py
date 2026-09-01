@@ -18,8 +18,10 @@ Stdlib only, so it also runs on a laptop or in the pod with nothing installed.
     python scripts/ih_models.py --chat <model-id>  # latency, warm and cold
     python scripts/ih_models.py --chat <id> --no-think   # thinking disabled
 
-Reasoning tokens are reported separately because on the Hub's Qwen ids they
-are most of the bill. These models return chain-of-thought in
+    Reasoning tokens are reported separately because on the Hub's Qwen ids they
+    are most of the latency. Inference Hub is internal, so tokens cost nothing
+    here -- but they cost seconds, which is the budget that binds. These models
+    return chain-of-thought in
 `reasoning_content` and the answer in `content`, and the token budget covers
 both, reasoning first -- so a budget that looks generous can be consumed
 entirely by thinking and return a *successful* response with empty content.
