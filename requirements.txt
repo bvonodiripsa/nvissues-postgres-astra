@@ -1,0 +1,52 @@
+# Serving dependencies for the Astra image.
+#
+# torch is NOT listed here. The Dockerfile installs it first from PyTorch's
+# CPU-only index, so pip cannot resolve the 2.5 GB CUDA build in behind
+# transformers -- an Astra application pod has no GPU to use it with.
+#
+# No azure-cosmos, azure-identity or aiohttp, unlike the Azure image this repo
+# is derived from. Three modules import the Azure SDKs at module scope
+# upstream; here those imports are guarded, because this deployment reads
+# Postgres and never opens a Cosmos connection. Shipping ~40 MB of cloud SDK
+# to an on-prem cluster only adds NSpect surface for code the pod never runs.
+#
+# Also absent: sentence-transformers (the query path calls transformers'
+# AutoModel directly via gi_builder.embed_sync) and pandas (gi_index reads
+# Parquet with pyarrow alone).
+
+# Floors are the versions this app is actually verified against -- the set
+# installed in the venv currently serving the 1M corpus -- not the oldest
+# version that might work. The inherited floors said things like
+# `transformers>=4.40` while the tested runtime was 5.15, which is a claim
+# nobody had checked in a long time and a resolver is free to act on.
+fastapi>=0.141
+uvicorn[standard]>=0.52
+pydantic>=2.13
+
+# The answer and expand roles speak the OpenAI protocol, which is exactly what
+# the NVIDIA Inference Hub exposes at inference-api.nvidia.com/v1.
+openai>=3.3
+
+numpy>=2.2
+pyarrow>=20.0
+rank_bm25>=0.2.2
+
+# In-process Qwen3-Embedding-0.6B for the query vector. Must be the same model
+# that embedded the corpus, or query and document vectors land in different
+# spaces and retrieval degrades silently instead of failing.
+transformers>=5.15
+
+pyyaml>=6.0
+httpx>=0.28
+# Unconditional imports at the top of gi_builder, which api.py imports.
+tqdm>=4.70
+python-dotenv>=1.2
+
+# index.mode: postgres. The `pool` extra is required, not optional:
+# PostgresBackend serves each request from an AsyncConnectionPool so that the
+# vector, lexical and anchor fetches retrieval issues together actually
+# overlap rather than serialising. `binary` avoids building libpq in the image.
+psycopg[binary,pool]>=3.3
+# Adapts `vector` columns, so an embedding binds as a vector rather than as a
+# float array -- for which no distance operator exists and the query fails.
+pgvector>=0.5

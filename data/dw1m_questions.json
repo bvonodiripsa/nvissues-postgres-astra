@@ -1,0 +1,176 @@
+[
+  {
+    "question_id": "1",
+    "question_text": "Which open P0 bugs affect the Diomedes system, and what do they have in common?",
+    "exercises": "Hub node named by the query. Diomedes carries 345 bugs, so hop 0 must keep hub edges while max_triples_per_node caps the fan-out.",
+    "answer": ""
+  },
+  {
+    "question_id": "2",
+    "question_text": "What do we know about bugcheck 0x116 on ARM64 systems?",
+    "exercises": "Lexical code match. '0x116' is a BM25 term, not a semantic one, so this fails without keyword expansion feeding full-text search.",
+    "answer": ""
+  },
+  {
+    "question_id": "3",
+    "question_text": "Summarise the crash signatures involving nvlddmkm and group them by faulting routine.",
+    "exercises": "Set answer requiring grouping. 150 bugs mention nvlddmkm; the answer is the grouping, not the enumeration.",
+    "answer": ""
+  },
+  {
+    "question_id": "4",
+    "question_text": "Which bugs are TDR or GPU timeout failures, and are any of them still open?",
+    "exercises": "Symptom retrieval crossed with disposition, which lives in the deterministic graph rather than the prose.",
+    "answer": ""
+  },
+  {
+    "question_id": "5",
+    "question_text": "What driver flighting requests has Microsoft raised, and what is their current status?",
+    "exercises": "Largest cluster in the corpus (263 bugs mention flighting). Tests whether the answer stays a summary instead of a dump.",
+    "answer": ""
+  },
+  {
+    "question_id": "6",
+    "question_text": "Which bugs are marked as duplicates or clones of another bug, and what were they duplicating?",
+    "exercises": "Bug-to-bug edges (108 cloned_from, 51 duplicate links) rather than bug-to-attribute edges.",
+    "answer": ""
+  },
+  {
+    "question_id": "7",
+    "question_text": "Which system-crash severity bugs are open on the Krypton release?",
+    "exercises": "Two hub attributes at once. Both '1-System Crash' and 'Krypton' are high-degree nodes, so the fan-out cap decides whether either contributes.",
+    "answer": ""
+  },
+  {
+    "question_id": "8",
+    "question_text": "What HLK test failures are reported, and which components do they implicate?",
+    "exercises": "Test-suite vocabulary appearing only in prose (169 bugs), joined to the component field from the graph.",
+    "answer": ""
+  },
+  {
+    "question_id": "9",
+    "question_text": "Are there any CUDA-related bugs, and what do they report?",
+    "exercises": "Sparse topic (37 bugs) in a corpus dominated by Windows graphics, so a wrong answer here is a false-positive test.",
+    "answer": ""
+  },
+  {
+    "question_id": "10",
+    "question_text": "What is bug 6539931 about, and what has been done on it so far?",
+    "exercises": "Single-bug lookup. The 'what has been done' half lives in the comment thread, so it fails if section chunks are not retrieved.",
+    "answer": ""
+  },
+  {
+    "question_id": "11",
+    "question_text": "Which bugs are in the Audio partner area, and are they NVIDIA bugs?",
+    "exercises": "Small partition (36 bugs) where disposition 'Not an NV bug' is the actual answer for some of them.",
+    "answer": ""
+  },
+  {
+    "question_id": "12",
+    "question_text": "Which bugs report hangs or freezes during stress or endurance testing?",
+    "exercises": "Symptom plus trigger, both prose-only. This is what the offline LLM extraction layer is meant to improve.",
+    "answer": ""
+  },
+  {
+    "question_id": "13",
+    "question_text": "How many bugs fall into each priority level? Show it as a bar chart.",
+    "exercises": "Categorical distribution rendered as a chart instead of prose -- five priority values (Unprioritized, P0, P1, P2, Showstopper) read off the graph index's relation counts, not retrieved source text. The server translates 'bar chart' to the exact mermaid syntax; the customer-facing question never says mermaid.",
+    "answer": ""
+  },
+  {
+    "question_id": "14",
+    "question_text": "Show Bug 6401760 and the bugs that are duplicates of it as a flowchart.",
+    "exercises": "Bug-to-bug edges rendered as a diagram. Named hub with 8 duplicates keeps the graph small and the answer deterministic -- an open-ended 'which bugs are duplicates' version fans out to 40+ nodes and invites the model to second-guess itself mid-answer. The server translates 'flowchart' to the exact mermaid syntax; the customer-facing question never says mermaid.",
+    "answer": ""
+  },
+  {
+    "question_id": "15",
+    "question_text": "Bug 6499140 is a Death Stranding 2 performance problem on Diomedes. Which bug was it cloned from, and what application does that original bug concern?",
+    "exercises": "Two-hop clone edge to a bug about a different game entirely. Nothing in 6499140's own text mentions the original's application, so keyword or vector search over the question can't reach it -- only the cloned_from edge does. Answer must name Bug 6467261 and Elden Ring.",
+    "answer": ""
+  },
+  {
+    "question_id": "16",
+    "question_text": "Bug 6401842 was closed as a duplicate. Which bug is the surviving original, what is its priority and status, and what happened to the other bug that was folded into that same original?",
+    "exercises": "Three-hop: forward to the original, then back down the fan-in to a sibling duplicate never mentioned in the anchor bug's record. Answer must name Bug 6401760 (P0, open) and Bug 6401852 (closed Can't Reproduce).",
+    "answer": ""
+  },
+  {
+    "question_id": "17",
+    "question_text": "Bug 6533196 is marked fixed. Is the bug it was cloned from also fixed?",
+    "exercises": "The correct answer is a status that exists only on the far side of a clone edge (Bug 6462246, still open) -- reading the anchor bug alone gives exactly the wrong answer.",
+    "answer": ""
+  },
+  {
+    "question_id": "18",
+    "question_text": "Bug 6392667 is an AI security finding raised by Microsoft. What other bugs is it linked to, and do they describe the same class of vulnerability?",
+    "exercises": "Third bug (6392670) is reachable only through a second bug's see_also edge, two hops from the anchor. Tests whether the traversal keeps going past the first link instead of stopping there.",
+    "answer": ""
+  },
+  {
+    "question_id": "19",
+    "question_text": "Are there any bugs that are still open even though the bug they were cloned from has already been fixed?",
+    "exercises": "Aggregate join over every clone edge in the corpus comparing disposition at both ends -- no single document states this, so it fails without a real graph traversal. Answer names two pairs: 6399633/6112114 and 5710040/5707095.",
+    "answer": ""
+  },
+  {
+    "question_id": "X1",
+    "question_text": "Microsoft's Bug 5816744 reports that a GPU could not be added to a partition. Is another cloud provider tracking the same defect, and how was it resolved there?",
+    "exercises": "The matrix asserts this pair is one defect across two providers. nvbugs carries it as a formal duplicate edge, so the app should reach it by traversal rather than by resemblance -- the two synopses share almost no vocabulary ('Could not add gpu to partition' vs 'L10 FDT NVLink testing failed with LoadNvidiaDriver').",
+    "answer": ""
+  },
+  {
+    "question_id": "X2",
+    "question_text": "Several customers have reported the GB300 PDB hot-swap controller MOSFET burning. Which bugs cover it, and is the issue still open for every customer that hit it?",
+    "exercises": "The matrix marks this family red for both Meta and AWS, which reads as one active cross-provider blocker. The records disagree: AWS closed theirs as Not a bug. Answering well means enumerating the set and comparing dispositions across it, not summarising the first hit.",
+    "answer": ""
+  },
+  {
+    "question_id": "X3",
+    "question_text": "Bugs 6123852 and 6123999 both concern CX8 link-downs from loss-of-lock on GB300. What distinguishes them, which is still open, and which providers are involved?",
+    "exercises": "Explains the apparent duplication in the grid: it is one multi-cloud deployment, not a mis-attribution. Also a directional test -- the two bugs differ only in TX versus RX and have opposite dispositions, so a summary that blurs them is wrong.",
+    "answer": ""
+  },
+  {
+    "question_id": "X4",
+    "question_text": "Bug 6081965 reports that adding a GPU to the switch manager fails. Which other Fabric Manager partition bugs is it linked to, and are any of them still open?",
+    "exercises": "The matrix splits these across two families -- gfm-partition-add-stale-state and fm-ha-disabled-stale-state -- while nvbugs links them into one cluster. The app is reading the records, so it should report the cluster the edges describe, and the answer is a check on whether the matrix's family boundary matches the engineering one.",
+    "answer": ""
+  },
+  {
+    "question_id": "X5",
+    "question_text": "Bug 5632588 tracks a performance spread on an internal NVIDIA fleet. Following its links, which external customer hit a related problem, and which GB300 firmware issue does it also connect to?",
+    "exercises": "Two hops in different directions from one anchor, one of which crosses from an internal reference fleet to a paying customer and the other from GPU silicon variation to a firmware fault. The matrix places these in different families and different columns; only the edges join them.",
+    "answer": ""
+  },
+  {
+    "question_id": "X6",
+    "question_text": "List every open bug in the corpus at P0-Must have or Showstopper priority, with its customer.",
+    "exercises": "The attribute question the vector path cannot answer by ranking, and the reason the structured filter exists. Priority is doubly awkward here: this corpus mixes two vocabularies, so P0-Must have, *Showstopper* and 0-Showstopper all have to be treated as the same band.",
+    "answer": ""
+  },
+  {
+    "question_id": "X7",
+    "question_text": "Bug 6165782 is about not being able to downgrade the HMC EROT firmware. Which other bugs in the corpus is it formally linked to?",
+    "exercises": "The failure mode to guard against is inventing a link because the question implies one exists. A correct answer says there are none, and may note the bug is open at 5-Normal for Microsoft-CSI. This is also the clearest case where the matrix carries knowledge the records do not.",
+    "answer": ""
+  },
+  {
+    "question_id": "X8",
+    "question_text": "AWS reported Bug 6065879 as an L10 partner diagnostic failure at the ultrapass cable. Was it accepted as an NVIDIA defect?",
+    "exercises": "Short, but it separates three dispositions the corpus keeps distinct and a careless answer conflates: 'Not a bug', 'Not an NV bug' and 'Bug - Will not fix'. The matrix shows this cell green with a Not-an-NV-bug tag, so the record and the grid agree here.",
+    "answer": ""
+  },
+  {
+    "question_id": "X9",
+    "question_text": "Show Bug 6081965 and the bugs it is linked to as a flowchart.",
+    "exercises": "Carried over from the unified corpus's question 14, which is where the diagram path was first exercised, and moved here because this is the database that holds Bug 6081965 -- 11 edges over 8 neighbours. Two things at once: the Mermaid rendering triggered by the word 'flowchart' alone, and a traversal wide enough to be worth drawing without being a hub.",
+    "answer": ""
+  },
+  {
+    "question_id": "X10",
+    "question_text": "Which bugs did Microsoft report, and which of them are still open?",
+    "exercises": "The customer attribute at corpus scale: 40 Microsoft bugs here, 13 of them open, which is more than the top-k would return and so is the structured filter's job rather than the vector path's. Also the question the attribute graph answers by walking backwards from the customer to the bugs asserting it.",
+    "answer": ""
+  }
+]

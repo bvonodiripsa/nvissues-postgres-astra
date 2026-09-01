@@ -1,0 +1,116 @@
+[
+  {
+    "question_id": "1",
+    "question_text": "Which open P0 bugs affect the Diomedes system, and what do they have in common?",
+    "exercises": "Hub node named by the query. Diomedes carries 345 bugs, so hop 0 must keep hub edges while max_triples_per_node caps the fan-out.",
+    "answer": ""
+  },
+  {
+    "question_id": "2",
+    "question_text": "What do we know about bugcheck 0x116 on ARM64 systems?",
+    "exercises": "Lexical code match. '0x116' is a BM25 term, not a semantic one, so this fails without keyword expansion feeding full-text search.",
+    "answer": ""
+  },
+  {
+    "question_id": "3",
+    "question_text": "Summarise the crash signatures involving nvlddmkm and group them by faulting routine.",
+    "exercises": "Set answer requiring grouping. 150 bugs mention nvlddmkm; the answer is the grouping, not the enumeration.",
+    "answer": ""
+  },
+  {
+    "question_id": "4",
+    "question_text": "Which bugs are TDR or GPU timeout failures, and are any of them still open?",
+    "exercises": "Symptom retrieval crossed with disposition, which lives in the deterministic graph rather than the prose.",
+    "answer": ""
+  },
+  {
+    "question_id": "5",
+    "question_text": "What driver flighting requests has Microsoft raised, and what is their current status?",
+    "exercises": "Largest cluster in the corpus (263 bugs mention flighting). Tests whether the answer stays a summary instead of a dump.",
+    "answer": ""
+  },
+  {
+    "question_id": "6",
+    "question_text": "Which bugs are marked as duplicates or clones of another bug, and what were they duplicating?",
+    "exercises": "Bug-to-bug edges (108 cloned_from, 51 duplicate links) rather than bug-to-attribute edges.",
+    "answer": ""
+  },
+  {
+    "question_id": "7",
+    "question_text": "Which system-crash severity bugs are open on the Krypton release?",
+    "exercises": "Two hub attributes at once. Both '1-System Crash' and 'Krypton' are high-degree nodes, so the fan-out cap decides whether either contributes.",
+    "answer": ""
+  },
+  {
+    "question_id": "8",
+    "question_text": "What HLK test failures are reported, and which components do they implicate?",
+    "exercises": "Test-suite vocabulary appearing only in prose (169 bugs), joined to the component field from the graph.",
+    "answer": ""
+  },
+  {
+    "question_id": "9",
+    "question_text": "Are there any CUDA-related bugs, and what do they report?",
+    "exercises": "Sparse topic (37 bugs) in a corpus dominated by Windows graphics, so a wrong answer here is a false-positive test.",
+    "answer": ""
+  },
+  {
+    "question_id": "10",
+    "question_text": "What is bug 6539931 about, and what has been done on it so far?",
+    "exercises": "Single-bug lookup. The 'what has been done' half lives in the comment thread, so it fails if section chunks are not retrieved.",
+    "answer": ""
+  },
+  {
+    "question_id": "11",
+    "question_text": "Which bugs are in the Audio partner area, and are they NVIDIA bugs?",
+    "exercises": "Small partition (36 bugs) where disposition 'Not an NV bug' is the actual answer for some of them.",
+    "answer": ""
+  },
+  {
+    "question_id": "12",
+    "question_text": "Which bugs report hangs or freezes during stress or endurance testing?",
+    "exercises": "Symptom plus trigger, both prose-only. This is what the offline LLM extraction layer is meant to improve.",
+    "answer": ""
+  },
+  {
+    "question_id": "13",
+    "question_text": "How many bugs fall into each priority level? Show it as a bar chart.",
+    "exercises": "Categorical distribution rendered as a chart instead of prose -- five priority values (Unprioritized, P0, P1, P2, Showstopper) read off the graph index's relation counts, not retrieved source text. The server translates 'bar chart' to the exact mermaid syntax; the customer-facing question never says mermaid.",
+    "answer": ""
+  },
+  {
+    "question_id": "14",
+    "question_text": "Show Bug 6401760 and the bugs that are duplicates of it as a flowchart.",
+    "exercises": "Bug-to-bug edges rendered as a diagram. Named hub with 8 duplicates keeps the graph small and the answer deterministic -- an open-ended 'which bugs are duplicates' version fans out to 40+ nodes and invites the model to second-guess itself mid-answer. The server translates 'flowchart' to the exact mermaid syntax; the customer-facing question never says mermaid.",
+    "answer": ""
+  },
+  {
+    "question_id": "15",
+    "question_text": "Bug 6499140 is a Death Stranding 2 performance problem on Diomedes. Which bug was it cloned from, and what application does that original bug concern?",
+    "exercises": "Two-hop clone edge to a bug about a different game entirely. Nothing in 6499140's own text mentions the original's application, so keyword or vector search over the question can't reach it -- only the cloned_from edge does. Answer must name Bug 6467261 and Elden Ring.",
+    "answer": ""
+  },
+  {
+    "question_id": "16",
+    "question_text": "Bug 6401842 was closed as a duplicate. Which bug is the surviving original, what is its priority and status, and what happened to the other bug that was folded into that same original?",
+    "exercises": "Three-hop: forward to the original, then back down the fan-in to a sibling duplicate never mentioned in the anchor bug's record. Answer must name Bug 6401760 (P0, open) and Bug 6401852 (closed Can't Reproduce).",
+    "answer": ""
+  },
+  {
+    "question_id": "17",
+    "question_text": "Bug 6533196 is marked fixed. Is the bug it was cloned from also fixed?",
+    "exercises": "The correct answer is a status that exists only on the far side of a clone edge (Bug 6462246, still open) -- reading the anchor bug alone gives exactly the wrong answer.",
+    "answer": ""
+  },
+  {
+    "question_id": "18",
+    "question_text": "Bug 6392667 is an AI security finding raised by Microsoft. What other bugs is it linked to, and do they describe the same class of vulnerability?",
+    "exercises": "Third bug (6392670) is reachable only through a second bug's see_also edge, two hops from the anchor. Tests whether the traversal keeps going past the first link instead of stopping there.",
+    "answer": ""
+  },
+  {
+    "question_id": "19",
+    "question_text": "Are there any bugs that are still open even though the bug they were cloned from has already been fixed?",
+    "exercises": "Aggregate join over every clone edge in the corpus comparing disposition at both ends -- no single document states this, so it fails without a real graph traversal. Answer names two pairs: 6399633/6112114 and 5710040/5707095.",
+    "answer": ""
+  }
+]

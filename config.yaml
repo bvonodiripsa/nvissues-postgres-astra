@@ -1,0 +1,153 @@
+# =============================================================================
+# nvissues-postgres-astra — runtime config
+# =============================================================================
+# Same code, same retrieval contract and the same in-process embedder as the
+# Azure deployment this repo is derived from (bvonodiripsa/nvissues-postgres,
+# config.nvissues.pg.yaml). Two things differ, and both follow from where this
+# runs:
+#
+#   1. The store is the internal Postgres at wfo-bugs-retriever-dv-rw, not
+#      Azure. Only PGHOST/PGDATABASE change, because pgconn builds the DSN from
+#      the environment either way.
+#   2. The LLM is the NVIDIA Inference Hub, not Azure OpenAI. Astra is a
+#      managed OpenShift cluster and the platform's own requirement is that
+#      "LLM inference can be consumed from managed NIM endpoints" -- an app pod
+#      does not get a GPU, so a co-located vLLM is not an option here the way
+#      it is on the H100.
+#
+# Everything the pod needs beyond this file arrives as environment, and on
+# Astra that means Vault (astra-vault-management, or the Console's vault setup
+# with a path under /fusion/astra). Nothing secret is committed here.
+#
+# Required environment:
+#   PGHOST      wfo-bugs-retriever-dv-rw.db.nvidia.com
+#   PGPORT      5432
+#   PGUSER      bugs_retriever_dev_adm
+#   PGPASSWORD  from Vault
+#   PGDATABASE  bugs_retriever_dev
+#   IH_API_KEY  an Inference Hub service key -- Non-Prod for stg, Prod for prd
+#   IH_ANSWER_MODEL / IH_EXPAND_MODEL   ids returned by /v1/models for that key
+#
+# The two model ids have no defaults on purpose. Inference Hub ids are
+# provider-prefixed and entitlement-dependent, the catalogue changes, and a
+# wrong id fails as a 401/404 that llm_roles catches and logs as a warning --
+# which is exactly how a broken expand role went unnoticed for weeks against
+# Azure. Run `scripts/ih_models.py` with the deployment's own key and paste
+# what it returns. Unset, the answer role fails loudly at the first question,
+# which is the behaviour to want.
+# =============================================================================
+
+corpora:
+  # One entry, because the internal server holds one copy. `database_name`
+  # overrides index.dbname, so the credentials above are shared and only this
+  # name would change if a second corpus were loaded beside it.
+  #
+  # Verify the row count before trusting the label: the transfer from Azure ran
+  # as a resumable copy and a partially-copied `bugs` table is a working
+  # database that quietly answers from a fraction of the corpus. `select
+  # count(*) from bugs` should read 999,198.
+  - id: "dw1m"
+    label: "NVBugsDW full load — 999,198 bugs"
+    database_name: "${PGDATABASE:-bugs_retriever_dev}"
+    questions_path: "data/dw1m_questions.json"
+
+cosmos:
+  # Read only for `database_name`, which GIQueryEngine requires at
+  # construction. Nothing here opens a Cosmos connection, which is what lets
+  # this container run with no Azure identity at all -- worth keeping true on
+  # Astra, where there is none to be had.
+  uri: ""
+  key: ""
+  database_name: "nvissues"
+  use_rbac_auth: false
+  semantic_reranker_endpoint: ""
+
+index:
+  mode: "postgres"
+  dsn: ""
+  # Both sizes equal so the pool is fully open before the first question rather
+  # than during it. The reasoning is the same as the Azure config's but the
+  # arithmetic is friendlier: this database is on CorpNet rather than across a
+  # region boundary, so a connection should cost milliseconds instead of the
+  # 7.1s measured DGX-to-Sweden. Re-measure once the pod is up -- if it is
+  # cheap, this is free; if the internal server is slower than expected, this
+  # is the setting that keeps the cost off the critical path.
+  pool_min: 8
+  pool_max: 8
+
+embedding:
+  # MUST stay empty, and more so here than anywhere else. The 4.36M chunk
+  # vectors in this database were produced by Qwen3-Embedding-0.6B; an HTTP
+  # embedder -- including an Inference Hub embedding model that looks
+  # equivalent -- would produce vectors from a different model and retrieval
+  # would degrade silently rather than fail. The model is baked into the image
+  # and runs on CPU: one query embedding, not a corpus.
+  embed_endpoint: ""
+  embed_model: "Qwen/Qwen3-Embedding-0.6B"
+  embed_dimensions: 1024
+  embed_cache_size: 4096
+
+llm:
+  # The Inference Hub is OpenAI-compatible, so the existing client works
+  # unchanged -- base URL and key are the whole integration. Approved for
+  # Public, Confidential and Secret data, which covers bug text.
+  endpoint: "${IH_ENDPOINT:-https://inference-api.nvidia.com/v1}"
+  model: "${IH_ANSWER_MODEL}"
+  api_key: "${IH_API_KEY}"
+  temperature: 0.0
+  max_tokens: ${LLM_MAX_TOKENS:-1200}
+  # Sized for the model actually named, and the failure mode is asymmetric: too
+  # low silently truncates a long retrieval into an empty answer, too high gets
+  # rejected as a 400. 128000 fits the Llama 3.3 and Qwen-class ids on the Hub;
+  # drop it if the chosen id serves a shorter window.
+  max_model_len: ${LLM_MAX_MODEL_LEN:-128000}
+  max_retries: 3
+
+  roles:
+    expand:
+      endpoint: "${IH_ENDPOINT:-https://inference-api.nvidia.com/v1}"
+      # A small model on purpose. This call blocks retrieval and its job is
+      # recall, not thought: the useful output is vocabulary a bug reporter
+      # would have typed.
+      model: "${IH_EXPAND_MODEL}"
+      # Empty inherits llm.api_key. Flat, not nested -- `${A:-${B:-c}}` looks
+      # like shell but the substitution stops at the first `}`, which appended
+      # a stray brace to the key and 401'd every expansion call for weeks.
+      api_key: "${IH_EXPAND_KEY:-}"
+
+    answer:
+      endpoint: "${IH_ENDPOINT:-https://inference-api.nvidia.com/v1}"
+      model: "${IH_ANSWER_MODEL}"
+      api_key: "${IH_API_KEY}"
+
+  # Note what is absent: no `reasoning.effort` on either role. That argument is
+  # a gpt-5-family feature and a plain chat model rejects the whole request
+  # rather than ignoring it, so setting it against a Qwen or Llama id on the
+  # Hub turns every question into a 400. Add it back only for an id that is
+  # actually a reasoning model, and only after checking it round-trips.
+
+query:
+  seed_entities_k: 10
+  max_hops: 2
+  max_triples: 40
+  max_triples_per_node: 25
+  max_source_chunks: 20
+  vector_augment_k: 20
+  # 1200 rather than the Azure config's 8000, because that ceiling exists to
+  # clear what a reasoning model spends thinking before it writes a word. A
+  # plain chat model spends the budget on text, and this corpus's answers
+  # measure 77-655 tokens -- against a self-hosted Qwen, 4096 was read as
+  # permission to enumerate 86 bugs for 1,927 tokens and 36 seconds.
+  max_answer_tokens: ${LLM_MAX_TOKENS:-1200}
+  use_structured_filter: true
+  structured_filter_max_bugs: 120
+  max_linked_bugs: 8
+  linked_bug_chunks: 2
+
+ranker:
+  use_ranker: false
+  k_ranker: 20
+
+paths:
+  questions_file: "${QUESTIONS_FILE:-data/dw1m_questions.json}"
+  output_root: "out_gi"

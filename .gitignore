@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Credentials. pgconn reads this at the repo root for interactive use; in the
+# cluster the same names arrive from Vault as environment.
+.pgsecrets
+.env
+
+out_gi/
+*.log

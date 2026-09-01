@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NV Bug Agent</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #050705; --surface: #12160f; --border: #2c362c;
+    --text: #f4f8f2; --text2: #9aa79a; --accent: #76b900;
+    --accent-hover: #5c9200; --green: #76b900; --amber: #e3af40;
+    --red: #ff6b5f; --code-bg: #070907; --radius: 8px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         background: var(--bg); color: var(--text); line-height: 1.5;
+         display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  .header { background: linear-gradient(135deg, #10130d 0%, #2c3a10 100%);
+            border-bottom: 1px solid var(--border);
+            color: #fff; padding: 16px 24px; flex: 0 0 auto;
+            display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 1.3rem; font-weight: 600; margin-right: auto; }
+  .header .corpus-meta { font-size: 0.8rem; color: var(--text2); max-width: 320px;
+                         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header select { width: auto; max-width: 420px; padding: 6px 10px; font-size: 0.8rem; }
+
+  .layout { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+
+  /* --- Left: bug list ---------------------------------------------------- */
+  .bug-panel { flex: 0 0 340px; min-width: 220px; max-width: 80%;
+               display: flex; flex-direction: column; min-height: 0;
+               background: var(--surface); border-right: 1px solid var(--border); }
+  .bug-panel-head { padding: 14px 16px 10px; flex: 0 0 auto;
+                     border-bottom: 1px solid var(--border); }
+  .bug-panel-head .title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .bug-panel-head .title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+                            letter-spacing: 0.05em; color: var(--text2); }
+  .bug-panel-head .count { font-size: 0.75rem; color: var(--text2); margin-top: 2px; }
+  .link-btn { background: none; border: none; padding: 0; font-size: 0.75rem;
+              color: var(--green); cursor: pointer; text-decoration: underline; }
+  .link-btn:hover { color: var(--accent-hover); }
+  .bug-list { flex: 1; overflow-y: auto; min-height: 0; }
+  .bug-list:empty::before { content: 'Loading bugs\2026'; display: block;
+                             padding: 16px; color: var(--text2); font-style: italic; }
+  .bug-row { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
+             transition: background 0.1s; }
+  .bug-row:hover { background: rgba(118, 185, 0, 0.1); }
+  .bug-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .bug-row.active { background: rgba(118, 185, 0, 0.16); }
+  .bug-row-more { padding: 12px 16px; font-size: 0.75rem; color: var(--text2);
+                  font-style: italic; border-bottom: 1px solid var(--border); }
+  .bug-row .bug-id { font-size: 0.95rem; font-weight: 700; color: var(--green); }
+  .bug-row .bug-synopsis { font-size: 0.8rem; color: var(--text2); margin-top: 3px;
+                            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+                            overflow: hidden; }
+
+  /* --- Resizer ------------------------------------------------------------ */
+  .resizer { flex: 0 0 6px; cursor: col-resize; background: var(--border);
+             transition: background 0.15s; }
+  .resizer:hover, .resizer.dragging { background: var(--accent); }
+
+  /* --- Right: agent panel -------------------------------------------------*/
+  .agent-panel { flex: 1; min-width: 0; display: flex; flex-direction: column;
+                 min-height: 0; padding: 20px 24px; gap: 16px; overflow: hidden; }
+
+  .card { background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius); padding: 16px; flex: 0 0 auto; }
+  .card-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+                letter-spacing: 0.05em; color: var(--text2); margin-bottom: 10px; }
+  label { font-size: 0.875rem; font-weight: 500; display: block; margin-bottom: 6px; }
+  select, textarea, input[type=text] {
+    width: 100%; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; font-size: 0.9rem; font-family: inherit;
+    background: var(--code-bg); color: var(--text); transition: border 0.15s;
+  }
+  select:focus, textarea:focus, input[type=text]:focus { outline: none; border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 56px; }
+  select { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row.end { justify-content: flex-end; margin-top: 10px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+         background: var(--accent); color: #fff; border: none; border-radius: 6px;
+         padding: 9px 22px; font-size: 0.88rem; font-weight: 500; cursor: pointer;
+         transition: background 0.15s; white-space: nowrap; }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--text2); background: rgba(255,255,255,0.04); }
+
+  .skills-card .row { margin-bottom: 0; }
+  .add-skill-form { display: none; gap: 8px; margin-top: 10px; }
+  .add-skill-form.open { display: flex; }
+  .add-skill-form input { flex: 1; }
+
+  .answer-card { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .answer-box { flex: 1; overflow-y: auto; background: var(--code-bg); border-radius: 6px;
+                padding: 16px; font-size: 0.9rem; word-break: break-word; line-height: 1.65; }
+  .answer-box:empty::before { content: 'Ask a question to see the results here.';
+                               color: var(--text2); font-style: italic; }
+  .answer-box > *:first-child { margin-top: 0; }
+  .answer-box > *:last-child { margin-bottom: 0; }
+  .answer-box p { margin: 0 0 10px; }
+  .answer-box h1, .answer-box h2, .answer-box h3, .answer-box h4 {
+    margin: 14px 0 8px; line-height: 1.3; }
+  .answer-box h1 { font-size: 1.25rem; }
+  .answer-box h2 { font-size: 1.12rem; }
+  .answer-box h3 { font-size: 1rem; }
+  .answer-box h4 { font-size: 0.92rem; }
+  .answer-box ul, .answer-box ol { margin: 0 0 10px; padding-left: 22px; }
+  .answer-box li { margin-bottom: 4px; }
+  .answer-box strong { font-weight: 700; color: #f1f5f9; }
+  .answer-box em { font-style: italic; }
+  .answer-box a { color: var(--green); text-decoration: underline; }
+  .answer-box code { background: rgba(255,255,255,0.08); border-radius: 4px;
+                     padding: 1px 5px; font-family: 'SF Mono', 'Fira Code', monospace;
+                     font-size: 0.85em; }
+  .answer-box pre { background: rgba(0,0,0,0.35); border-radius: 6px; padding: 12px;
+                    overflow-x: auto; margin: 0 0 10px; }
+  .answer-box pre code { background: none; padding: 0; }
+  .answer-box .mermaid { background: rgba(0,0,0,0.35); border-radius: 6px; padding: 12px;
+                          margin: 0 0 10px; overflow-x: auto; text-align: center; }
+  .answer-box .mermaid svg { max-width: 100%; }
+  .answer-box blockquote { border-left: 3px solid var(--border); margin: 0 0 10px;
+                           padding-left: 12px; color: var(--text2); }
+  .answer-box hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .answer-box .error-line { color: var(--red); }
+
+  /* --- Progress bar -------------------------------------------------------*/
+  .progress-card { padding: 12px 16px; }
+  .progress-track { height: 6px; background: var(--code-bg); border-radius: 3px;
+                     overflow: hidden; border: 1px solid var(--border); }
+  .progress-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 3px;
+                    transition: width 0.35s ease, background 0.2s ease; }
+  .progress-fill.error { background: var(--red); }
+  .progress-steps { display: flex; justify-content: space-between; margin-top: 8px; }
+  .progress-step { font-size: 0.68rem; color: var(--text2); text-transform: uppercase;
+                    letter-spacing: 0.03em; transition: color 0.15s; }
+  .progress-step.active { color: var(--accent); font-weight: 700; }
+  .progress-step.done { color: var(--text); }
+  .progress-detail { font-size: 0.78rem; color: var(--text2); margin-top: 6px;
+                      min-height: 1.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .hidden { display: none !important; }
+  .spinner { width: 14px; height: 14px; border: 2px solid #fff4;
+             border-top-color: #fff; border-radius: 50%;
+             animation: spin 0.6s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>NV Bug Agent</h1>
+  <select id="corpus-select" class="hidden" title="Which database to ask"></select>
+  <span class="corpus-meta" id="corpus-meta"></span>
+</div>
+
+<div class="layout">
+  <div class="bug-panel" id="bugPanel">
+    <div class="bug-panel-head">
+      <div class="title-row">
+        <div class="title">Bugs</div>
+        <button type="button" id="btn-show-all-bugs" class="link-btn hidden">Show all</button>
+      </div>
+      <div class="count" id="bugCount">Loading\u2026</div>
+    </div>
+    <div class="bug-list" id="bugList"></div>
+  </div>
+
+  <div class="resizer" id="resizer"></div>
+
+  <div class="agent-panel">
+    <div class="card">
+      <div class="card-title">Question</div>
+      <textarea id="q-input" rows="2" placeholder="Ask about bugs, crash signatures, components, priorities..."></textarea>
+      <div class="row end">
+        <button type="button" class="btn btn-secondary hidden" id="btn-stop">Stop</button>
+        <button class="btn hidden" id="btn-ask">Ask</button>
+      </div>
+    </div>
+
+    <div class="card skills-card">
+      <div class="card-title">Templates</div>
+      <div class="row">
+        <select id="skills-select">
+          <option value="">-- Loading templates... --</option>
+        </select>
+        <button type="button" class="btn btn-secondary" id="btn-add-skill">+ Add New Template</button>
+      </div>
+      <div class="add-skill-form" id="add-skill-form">
+        <input type="text" id="new-skill-input" placeholder="Type a new question template...">
+        <button type="button" class="btn" id="btn-save-skill">Save</button>
+        <button type="button" class="btn btn-secondary" id="btn-cancel-skill">Cancel</button>
+      </div>
+    </div>
+
+    <div class="card progress-card hidden" id="progress-card">
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+      <div class="progress-steps" id="progress-steps">
+        <div class="progress-step" data-stage="0">Embedding</div>
+        <div class="progress-step" data-stage="1">Retrieving</div>
+        <div class="progress-step" data-stage="2">Filtering</div>
+        <div class="progress-step" data-stage="3">Calling LLM</div>
+        <div class="progress-step" data-stage="4">Generating</div>
+        <div class="progress-step" data-stage="5">Done</div>
+      </div>
+      <div class="progress-detail" id="progress-detail"></div>
+    </div>
+
+    <div class="card answer-card">
+      <div class="card-title">Result</div>
+      <div class="answer-box" id="answer-box"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const bugList        = document.getElementById('bugList');
+const bugCount       = document.getElementById('bugCount');
+const bugPanel       = document.getElementById('bugPanel');
+const btnShowAllBugs = document.getElementById('btn-show-all-bugs');
+const resizer        = document.getElementById('resizer');
+const qInput         = document.getElementById('q-input');
+const btnAsk         = document.getElementById('btn-ask');
+const btnStop        = document.getElementById('btn-stop');
+const corpusMeta     = document.getElementById('corpus-meta');
+const corpusSelect   = document.getElementById('corpus-select');
+const CORPUS_KEY     = 'nvbug.corpus';
+let currentCorpus    = localStorage.getItem(CORPUS_KEY) || '';
+
+function corpusQS() {
+  return currentCorpus ? ('?corpus=' + encodeURIComponent(currentCorpus)) : '';
+}
+const answerEl       = document.getElementById('answer-box');
+const skillsSelect   = document.getElementById('skills-select');
+const btnAddSkill    = document.getElementById('btn-add-skill');
+const addSkillForm   = document.getElementById('add-skill-form');
+const newSkillInput  = document.getElementById('new-skill-input');
+const btnSaveSkill   = document.getElementById('btn-save-skill');
+const btnCancelSkill = document.getElementById('btn-cancel-skill');
+const progressCard   = document.getElementById('progress-card');
+const progressFill   = document.getElementById('progress-fill');
+const progressSteps  = Array.from(document.querySelectorAll('.progress-step'));
+const progressDetail = document.getElementById('progress-detail');
+
+let skills = [];
+let abortCtrl = null;
+
+const CUSTOM_SKILLS_KEY = 'nvBugsAgent.customSkills';
+const PANEL_WIDTH_KEY = 'nvBugsAgent.bugPanelWidth';
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// -------------------------------------------------------------- bug list --
+
+let allBugs = [];
+let bugById = new Map();
+let activeBugId = null;
+
+// The panel is for browsing and for highlighting the bugs an answer cites, not
+// for scrolling a million rows: building that many DOM nodes locks the tab for
+// seconds. Render a cap and note the rest; the count line still states the true
+// corpus total. Raise if you actually need to eyeball more at once.
+const MAX_RENDER_ROWS = 400;
+
+function renderBugRows(rows) {
+  const shown = rows.length > MAX_RENDER_ROWS ? rows.slice(0, MAX_RENDER_ROWS) : rows;
+  // One HTML string + one parse beats appendChild per row; data-bug-id lets a
+  // single delegated listener handle clicks instead of N closures.
+  let html = '';
+  for (const b of shown) {
+    const id = esc(String(b.bug_id));
+    const active = String(b.bug_id) === activeBugId ? ' active' : '';
+    html += '<div class="bug-row' + active + '" tabindex="0" data-bug-id="' + id + '">'
+      + '<div class="bug-id">Bug ' + id + '</div>'
+      + '<div class="bug-synopsis">' + esc(b.synopsis || '(no synopsis)') + '</div>'
+      + '</div>';
+  }
+  if (rows.length > shown.length) {
+    html += '<div class="bug-row-more">Showing first '
+      + shown.length.toLocaleString() + ' of ' + rows.length.toLocaleString()
+      + ' \u2014 search or click a bug in an answer to narrow down.</div>';
+  }
+  bugList.innerHTML = html;
+}
+
+// Event delegation: one listener for the whole list, bound once. Rows carry
+// their id in data-bug-id and the bug object is looked up from bugById.
+function bugFromEvent(e) {
+  const row = e.target.closest('.bug-row[data-bug-id]');
+  if (!row) return null;
+  return bugById.get(row.getAttribute('data-bug-id')) || null;
+}
+bugList.addEventListener('click', e => {
+  const bug = bugFromEvent(e);
+  if (bug) askAboutBug(bug);
+});
+bugList.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const bug = bugFromEvent(e);
+  if (bug) { e.preventDefault(); askAboutBug(bug); }
+});
+
+// Clicking a bug asks a default question about it and streams the answer
+// into a fresh history entry, same as typing a question manually -- except
+// it's an automatic trigger, not the user editing, so Ask stays hidden.
+function askAboutBug(bug) {
+  activeBugId = String(bug.bug_id);
+  qInput.value = 'What is bug ' + bug.bug_id + ' about? Include current status and root cause if known.';
+  btnAsk.classList.add('hidden');
+  doAsk();
+}
+
+function showAllBugs() {
+  btnShowAllBugs.classList.add('hidden');
+  const meta = corporaCache.find(c => c.id === currentCorpus);
+  const total = meta && meta.bugs != null ? Number(meta.bugs) : allBugs.length;
+  if (total > allBugs.length) {
+    bugCount.textContent = total.toLocaleString() + ' in database';
+  } else {
+    bugCount.textContent = allBugs.length.toLocaleString() + ' loaded';
+  }
+  renderBugRows(allBugs);
+}
+
+// Bug IDs are 5-8 digit numbers; matching against the loaded corpus (instead
+// of a bare digit regex) keeps unrelated numbers in the answer from showing
+// up as false positives.
+function matchBugsInText(text) {
+  if (!text) return [];
+  const seen = new Set();
+  const matched = [];
+  const re = /\d{5,8}/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (seen.has(m[0])) continue;
+    const bug = bugById.get(m[0]);
+    if (bug) { seen.add(m[0]); matched.push(bug); }
+  }
+  return matched;
+}
+
+// Every 5-8 digit run in the answer, deduped, in the order the answer lists
+// them -- these are the candidate cited bug ids before we know which resolve.
+function citedIdsInText(text) {
+  if (!text) return [];
+  const seen = new Set();
+  const out = [];
+  const re = /\d{5,8}/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (!seen.has(m[0])) { seen.add(m[0]); out.push(m[0]); }
+  }
+  return out;
+}
+
+function renderMatchedBugs(text) {
+  const matched = matchBugsInText(text);
+  btnShowAllBugs.classList.remove('hidden');
+  if (matched.length) {
+    bugCount.textContent = matched.length.toLocaleString() + ' mentioned in this answer';
+    renderBugRows(matched);
+  } else {
+    // renderBugRows([]) would leave the list empty, and the :empty CSS then
+    // shows "Loading bugs..." forever -- write an explicit row instead.
+    bugCount.textContent = 'No bugs mentioned yet\u2026';
+    bugList.innerHTML = '<div class="bug-row-more">No cited bugs in this answer yet.</div>';
+  }
+}
+
+// Answers on a large corpus routinely cite bug ids the 2,000-row browse window
+// never loaded, so matching against bugById alone drops most of them. Fetch any
+// cited-but-unknown ids by id, fold them into bugById, then render -- so every
+// bug the answer names shows up, not just the ones already in the window.
+let bugFetchSeq = 0;
+async function resolveCitedBugs(text) {
+  renderMatchedBugs(text);
+  const missing = citedIdsInText(text).filter(id => !bugById.has(id));
+  if (!missing.length) return;
+  const seq = ++bugFetchSeq;
+  try {
+    const sep = corpusQS() ? '&' : '?';
+    const rows = await fetch('/v1/bugs' + corpusQS() + sep + 'ids=' + missing.join(','))
+      .then(r => r.json());
+    if (!Array.isArray(rows) || !rows.length) return;
+    for (const b of rows) bugById.set(String(b.bug_id), b);
+    // A newer answer may have superseded this fetch; only repaint if the panel
+    // is still showing the text this lookup was for.
+    if (seq === bugFetchSeq) renderMatchedBugs(text);
+  } catch (e) {}
+}
+
+btnShowAllBugs.addEventListener('click', showAllBugs);
+
+function loadBugs() {
+  bugCount.textContent = 'Loading\u2026';
+  // A browse panel, not a full dump: cap the fetch so a million-row corpus does
+  // not ship ~150 MB. The count line shows the true total from /v1/corpora, and
+  // answer citations resolve against this set (cited bugs sort to the front).
+  const sep = corpusQS() ? '&' : '?';
+  fetch('/v1/bugs' + corpusQS() + sep + 'limit=2000').then(r => r.json()).then(rows => {
+    allBugs = rows;
+    bugById = new Map(rows.map(b => [String(b.bug_id), b]));
+    showAllBugs();
+  }).catch(() => {
+    bugCount.textContent = 'Could not load bugs';
+  });
+}
+
+// --------------------------------------------------------------- resizer --
+
+function initResizer() {
+  const saved = parseInt(localStorage.getItem(PANEL_WIDTH_KEY) || '', 10);
+  if (!isNaN(saved)) bugPanel.style.flexBasis = saved + 'px';
+
+  let dragging = false;
+  resizer.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    resizer.classList.add('dragging');
+    resizer.setPointerCapture(e.pointerId);
+  });
+  resizer.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const layoutRect = resizer.parentElement.getBoundingClientRect();
+    let width = e.clientX - layoutRect.left;
+    const min = 220, max = layoutRect.width * 0.8;
+    width = Math.max(min, Math.min(max, width));
+    bugPanel.style.flexBasis = width + 'px';
+  });
+  const stop = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('dragging');
+    localStorage.setItem(PANEL_WIDTH_KEY, Math.round(bugPanel.getBoundingClientRect().width));
+  };
+  resizer.addEventListener('pointerup', stop);
+  resizer.addEventListener('pointercancel', stop);
+}
+
+// ---------------------------------------------------------------- skills --
+
+function renderSkills() {
+  skillsSelect.innerHTML = '<option value="">-- Select question template --</option>';
+  skills.forEach((s, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = (s.custom ? '\u2605 ' : '') + s.question_text;
+    skillsSelect.appendChild(opt);
+  });
+}
+
+function loadSkills() {
+  fetch('/v1/questions' + corpusQS()).then(r => r.json()).then(data => {
+    const predefined = (Array.isArray(data) ? data : []).map(q => ({
+      question_text: q.question_text, custom: false,
+    }));
+    let custom = [];
+    try {
+      custom = JSON.parse(localStorage.getItem(CUSTOM_SKILLS_KEY) || '[]')
+        .map(t => ({ question_text: t, custom: true }));
+    } catch (e) { custom = []; }
+    skills = predefined.concat(custom);
+    renderSkills();
+    btnAsk.disabled = false;
+  }).catch(() => {
+    skillsSelect.innerHTML = '<option value="">-- Could not load templates --</option>';
+    btnAsk.disabled = false;
+  });
+}
+
+function formatCorpusMeta(c) {
+  if (!c) return '';
+  const parts = [];
+  if (c.bugs != null) parts.push(Number(c.bugs).toLocaleString() + ' bugs');
+  if (c.chunks != null) parts.push(Number(c.chunks).toLocaleString() + ' chunks');
+  return parts.join(' \u00b7 ');
+}
+
+let corporaCache = [];
+
+function renderCorpusOptions(list) {
+  corpusSelect.innerHTML = '';
+  for (const c of list) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.label || c.id;
+    if (c.id === currentCorpus) opt.selected = true;
+    corpusSelect.appendChild(opt);
+  }
+  // A control with one option looks like a setting and does nothing, which is
+  // worse than no control: hide it until there is a choice to make.
+  corpusSelect.classList.toggle('hidden', list.length < 2);
+}
+
+// More than one database is served again -- the unified corpus that matches the
+// previous app's index, and the pipeline slice -- so the choice is back in the
+// header. It is remembered per browser, which is the second reason the picker
+// has to exist: a remembered id is otherwise invisible, and a browser that once
+// selected a corpus keeps asking that corpus for its question list however many
+// corpora have been added since. That is exactly how the cross-CSP and driver
+// templates went missing from a page that was serving them perfectly well.
+function loadCorpora() {
+  return fetch('/v1/corpora').then(r => r.json()).then(rows => {
+    const list = Array.isArray(rows) ? rows : [];
+    corporaCache = list;
+    if (!list.length) return;
+    const ids = new Set(list.map(c => c.id));
+    if (!currentCorpus || !ids.has(currentCorpus)) {
+      const def = list.find(c => c.default) || list[0];
+      currentCorpus = def.id;
+      localStorage.setItem(CORPUS_KEY, currentCorpus);
+    }
+    renderCorpusOptions(list);
+    corpusMeta.textContent = formatCorpusMeta(list.find(c => c.id === currentCorpus));
+  }).catch(() => { corpusMeta.textContent = ''; });
+}
+
+corpusSelect.addEventListener('change', () => {
+  currentCorpus = corpusSelect.value;
+  localStorage.setItem(CORPUS_KEY, currentCorpus);
+  corpusMeta.textContent = formatCorpusMeta(
+    corporaCache.find(c => c.id === currentCorpus));
+  // The bug list, the templates and any answer on screen all belong to the
+  // corpus selected when they were fetched, so none of them survives the
+  // switch. Clearing the answer is the honest option: leaving it up next to a
+  // different corpus's bug list invites reading it as an answer about this one.
+  answerEl.innerHTML = '';
+  activeBugId = null;
+  hideProgress();
+  loadBugs();
+  loadSkills();
+});
+
+function saveCustomSkills() {
+  const custom = skills.filter(s => s.custom).map(s => s.question_text);
+  localStorage.setItem(CUSTOM_SKILLS_KEY, JSON.stringify(custom));
+}
+
+// Picking a skill is an automatic trigger (not the user typing/editing), so
+// it asks right away instead of waiting for a manual Ask click.
+skillsSelect.addEventListener('change', () => {
+  const idx = skillsSelect.value;
+  if (idx === '') return;
+  qInput.value = skills[parseInt(idx, 10)].question_text;
+  activeBugId = null;
+  btnAsk.classList.add('hidden');
+  doAsk();
+});
+
+btnAddSkill.addEventListener('click', () => {
+  addSkillForm.classList.add('open');
+  newSkillInput.value = '';
+  newSkillInput.focus();
+});
+btnCancelSkill.addEventListener('click', () => addSkillForm.classList.remove('open'));
+btnSaveSkill.addEventListener('click', () => {
+  const text = newSkillInput.value.trim();
+  if (!text) return;
+  skills.push({ question_text: text, custom: true });
+  renderSkills();
+  saveCustomSkills();
+  addSkillForm.classList.remove('open');
+});
+newSkillInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); btnSaveSkill.click(); }
+  if (e.key === 'Escape') { btnCancelSkill.click(); }
+});
+
+// ------------------------------------------------------------- progress --
+
+// Maps the free-text "progress" messages the backend streams (see
+// retriever/api.py's `_stream_dflash_sse`, which walks embed -> retrieve ->
+// filter/rerank -> LLM call -> generate) onto the fixed set of steps shown
+// in the progress bar, so the bar reflects real backend pipeline stages
+// rather than a fake timer.
+function stageIndexFromMessage(message) {
+  const m = (message || '').toLowerCase();
+  if (m.includes('no entities found')) return 5;
+  if (m.includes('embedding question')) return 0;
+  if (m.includes('embedded in')) return 1;
+  if (m.includes('retrieving')) return 1;
+  if (m.includes('retrieved')) return 2;
+  if (m.includes('attribute filter')) return 2;
+  if (m.includes('calling llm')) return 3;
+  return null;
+}
+
+function setProgressStage(idx, detail) {
+  progressCard.classList.remove('hidden');
+  progressFill.classList.remove('error');
+  const pct = progressSteps.length > 1 ? (idx / (progressSteps.length - 1)) * 100 : 0;
+  progressFill.style.width = pct + '%';
+  progressSteps.forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+    el.classList.toggle('done', i < idx);
+  });
+  if (detail !== undefined) progressDetail.textContent = detail || '';
+}
+
+function setProgressError(detail) {
+  progressCard.classList.remove('hidden');
+  progressFill.classList.add('error');
+  progressFill.style.width = '100%';
+  progressSteps.forEach(el => el.classList.remove('active', 'done'));
+  progressDetail.textContent = detail || 'Error';
+}
+
+function hideProgress() {
+  progressCard.classList.add('hidden');
+}
+
+// ------------------------------------------------------ markdown + answer --
+
+// Minimal, dependency-free Markdown -> HTML renderer (bold, italic, code,
+// headings, lists, blockquotes, links, hr). Input is escaped first so raw
+// HTML in the answer can't inject markup. A ```mermaid fence gets a plain
+// <div class="mermaid"> instead of <pre><code> -- renderMermaidBlocks()
+// below turns those into actual diagrams once the answer settles.
+function renderMarkdown(src) {
+  if (!src) return '';
+  const lines = esc(src).replace(/\r\n?/g, '\n').split('\n');
+  const inline = (t) => t
+    .replace(/`([^`]+)`/g, (_, c) => '<code>' + c + '</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const html = [];
+  let listType = null, inCode = false, codeIsMermaid = false, inQuote = false;
+  let liOpen = false, liParaCount = 0;
+  const closeLi = () => { if (liOpen) { html.push('</li>'); liOpen = false; liParaCount = 0; } };
+  const closeList = () => { closeLi(); if (listType) { html.push('</' + listType + '>'); listType = null; } };
+  const closeQuote = () => { if (inQuote) { html.push('</blockquote>'); inQuote = false; } };
+  for (let raw of lines) {
+    const fence = raw.match(/^```\s*([\w-]*)/);
+    if (fence) {
+      if (inCode) { html.push(codeIsMermaid ? '</div>' : '</code></pre>'); inCode = false; }
+      else {
+        closeList(); closeQuote();
+        codeIsMermaid = fence[1].toLowerCase() === 'mermaid';
+        html.push(codeIsMermaid ? '<div class="mermaid">' : '<pre><code>');
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) { html.push(raw + '\n'); continue; }
+    if (/^\s*$/.test(raw)) { closeQuote(); continue; }
+    const h = raw.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { closeList(); closeQuote(); const n = h[1].length; html.push('<h' + n + '>' + inline(h[2]) + '</h' + n + '>'); continue; }
+    if (/^\s*([-*_])\s*\1\s*\1[-*_\s]*$/.test(raw)) { closeList(); closeQuote(); html.push('<hr>'); continue; }
+    const ol = raw.match(/^\s*\d+[.)]\s+(.*)$/);
+    const ul = raw.match(/^\s*[-*+]\s+(.*)$/);
+    if (ol || ul) {
+      const want = ol ? 'ol' : 'ul';
+      if (listType !== want) { closeList(); html.push('<' + want + '>'); listType = want; }
+      else { closeLi(); }
+      html.push('<li>' + inline((ol || ul)[1]));
+      liOpen = true; liParaCount = 0;
+      continue;
+    }
+    const q = raw.match(/^\s*>\s?(.*)$/);
+    if (q) { closeList(); if (!inQuote) { html.push('<blockquote>'); inQuote = true; } html.push(inline(q[1]) + ' '); continue; }
+    if (listType && liOpen && liParaCount === 0) {
+      html.push('<p>' + inline(raw) + '</p>');
+      liParaCount++;
+      continue;
+    }
+    closeList(); closeQuote();
+    html.push('<p>' + inline(raw) + '</p>');
+  }
+  if (inCode) html.push(codeIsMermaid ? '</div>' : '</code></pre>');
+  closeList(); closeQuote();
+  return html.join('');
+}
+
+// The model is prompted to skip custom colors and to use the xychart-beta
+// "min --> max" range syntax, but it does not always comply -- and a plain
+// "min max" range (no arrow) fails Mermaid's parser outright, dumping the
+// whole chart back to raw text instead of a partial render. Patch both
+// known failure modes here so rendering survives model drift instead of
+// depending on the prompt alone.
+function normalizeMermaidSource(src) {
+  let out = src
+    // "y-axis "Label" 0 700" -> "y-axis "Label" 0 --> 700" (only when the
+    // arrow is missing; already-correct source passes through untouched).
+    .replace(/^(\s*y-axis\s+"[^"]*"\s+-?[\d.]+)\s+(-?[\d.]+\s*)$/gm, '$1 --> $2')
+    .replace(/^(\s*x-axis\s+-?[\d.]+)\s+(-?[\d.]+\s*)$/gm, '$1 --> $2');
+  // Drop explicit style/fill overrides so the app's own dark theme (set via
+  // mermaid.initialize below) renders consistently instead of whatever
+  // arbitrary colors the model picked.
+  out = out.replace(/^\s*style\s+\S+\s+.*$/gm, '');
+  out = out.replace(/^\s*classDef\s+\S+\s+.*$/gm, '');
+  return out;
+}
+
+// Turns any not-yet-rendered <div class="mermaid"> under `root` into an
+// actual diagram. Best-effort: an incomplete diagram (still streaming in,
+// or truncated by the token budget) fails mermaid's parser, so on failure
+// this leaves the raw source visible as a code block instead of mermaid's
+// own error banner, and simply tries again next time this is called.
+async function renderMermaidBlocks(root) {
+  if (!window.mermaid || !mermaidReady) return;
+  const nodes = Array.from(root.querySelectorAll('div.mermaid'));
+  for (const node of nodes) {
+    const rawSrc = node.textContent;
+    if (!rawSrc || !rawSrc.trim()) continue;
+    const src = normalizeMermaidSource(rawSrc);
+    try {
+      await mermaid.parse(src);
+      const id = 'mmd-' + (mermaidSeq++);
+      const { svg } = await mermaid.render(id, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.textContent = rawSrc;
+      pre.appendChild(code);
+      node.replaceWith(pre);
+    }
+  }
+}
+let mermaidSeq = 0;
+let mermaidReady = false;
+if (window.mermaid) {
+  mermaid.initialize({
+    startOnLoad: false, theme: 'dark', securityLevel: 'strict',
+    themeVariables: {
+      primaryColor: '#12160f', primaryTextColor: '#f4f8f2', primaryBorderColor: '#76b900',
+      lineColor: '#76b900', secondaryColor: '#2c362c', tertiaryColor: '#070907',
+      background: '#070907', textColor: '#f4f8f2',
+    },
+  });
+  mermaidReady = true;
+}
+
+// ------------------------------------------------------------- history ---
+
+// Question/answer history rides on the real browser session history instead
+// of a custom widget: each new question does a pushState, and back/forward
+// in the browser chrome fires popstate, which just re-renders whatever
+// {question, answer, bugId} snapshot is attached to that entry's state.
+// liveEntry tracks which in-flight entry (if any) is still the one on
+// screen, so streaming tokens stop touching the DOM the moment the user
+// navigates away from it -- and replaceState keeps that entry's own history
+// slot up to date so coming back to it later (or hitting Stop) shows
+// whatever had actually streamed in.
+let liveEntry = null;
+
+function renderEntry(data) {
+  qInput.value = data.question || '';
+  btnAsk.classList.add('hidden');
+  answerEl.innerHTML = data.answer ? renderMarkdown(data.answer) : '';
+  renderMermaidBlocks(answerEl);
+  activeBugId = data.bugId || null;
+  if (data.answer) resolveCitedBugs(data.answer);
+  else showAllBugs();
+  // The progress bar only tracks a live stream; a history entry is a
+  // finished (or blank) snapshot, so there's no in-progress pipeline to show.
+  hideProgress();
+}
+
+window.addEventListener('popstate', (e) => {
+  liveEntry = null;
+  renderEntry(e.state || { question: '', answer: '', bugId: null });
+});
+
+// Baseline entry so pressing Back past the first question returns to a
+// blank slate instead of running out of history.
+window.history.replaceState({ question: '', answer: '', bugId: null }, '');
+
+// ---------------------------------------------------------- ask + stream --
+
+async function doStream(question, entry) {
+  const isVisible = () => liveEntry === entry;
+  // Browsers rate-limit history.replaceState/pushState (Chrome/Firefox/Safari
+  // all cap it around 100-200 calls per 10-30s and then silently drop -- or,
+  // on some versions, throw -- any further calls). A streamed answer can
+  // easily emit far more token events than that, so calling replaceState on
+  // every token means only the early calls actually land and the persisted
+  // history state freezes on some early partial answer, even though the
+  // on-screen text (a plain DOM write, not throttled) keeps updating fine.
+  // Throttle our own writes well under that limit, but always force one last
+  // write when the stream actually ends so what's persisted matches what's
+  // on screen, not whatever fragment made it through the throttle.
+  let lastSyncAt = 0;
+  const SYNC_INTERVAL_MS = 400;
+  const sync = (force = false) => {
+    if (!isVisible()) return;
+    const now = Date.now();
+    if (!force && now - lastSyncAt < SYNC_INTERVAL_MS) return;
+    lastSyncAt = now;
+    try { window.history.replaceState({ ...entry }, ''); } catch (e) {}
+  };
+  // The server answers in ~1-5s end to end even under load (measured directly
+  // against it repeatedly), yet the browser has occasionally sat on "Starting"
+  // for 30s+ with nothing arriving -- a stale/reused connection the server
+  // never sees, not a slow answer. There's no visibility into that from here,
+  // so treat "no bytes within STALL_MS" as that failure mode: drop the
+  // connection and open a fresh one rather than leaving the user staring at a
+  // frozen bar. One retry only, and only before the first byte -- a stall or
+  // drop mid-stream is a real connection error, not this failure mode.
+  const STALL_MS = 12000;
+  let resp, attemptCtrl, onUserAbort, stalledOut = false;
+
+  try {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      attemptCtrl = new AbortController();
+      onUserAbort = () => attemptCtrl.abort();
+      abortCtrl.signal.addEventListener('abort', onUserAbort);
+      let gotFirstByte = false;
+      const watchdog = setTimeout(() => { if (!gotFirstByte) attemptCtrl.abort(); }, STALL_MS);
+      try {
+        resp = await fetch('/v1/ask/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, corpus: currentCorpus || undefined }),
+          signal: attemptCtrl.signal,
+        });
+        gotFirstByte = true;
+        clearTimeout(watchdog);
+        break; // connected -- keep this attemptCtrl/listener for the read loop below
+      } catch (e) {
+        clearTimeout(watchdog);
+        abortCtrl.signal.removeEventListener('abort', onUserAbort);
+        if (abortCtrl.signal.aborted) throw e; // real user Stop
+        if (attempt === 1) {
+          if (isVisible()) progressDetail.textContent = 'No response yet, retrying\u2026';
+          continue;
+        }
+        stalledOut = true;
+        throw e;
+      }
+    }
+
+    if (!resp.ok) {
+      entry.answer = '**Error:** ' + (await resp.text());
+      if (isVisible()) { answerEl.innerHTML = renderMarkdown(entry.answer); renderMermaidBlocks(answerEl); sync(true); }
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let seenFirstToken = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') continue;
+        try {
+          const ev = JSON.parse(payload);
+          if (ev.stage === 'progress') {
+            if (isVisible()) {
+              const idx = stageIndexFromMessage(ev.message);
+              setProgressStage(idx !== null ? idx : 0, ev.message);
+            }
+          } else if (ev.stage === 'token') {
+            if (!seenFirstToken) {
+              seenFirstToken = true;
+              if (isVisible()) setProgressStage(4, 'Generating answer\u2026');
+            }
+            entry.answer += ev.text || '';
+            if (isVisible()) {
+              answerEl.innerHTML = renderMarkdown(entry.answer);
+              answerEl.scrollTop = answerEl.scrollHeight;
+              renderMatchedBugs(entry.answer);
+              sync();
+            }
+          } else if (ev.stage === 'done') {
+            if (isVisible()) {
+              setProgressStage(5, 'Done');
+              renderMermaidBlocks(answerEl);
+              resolveCitedBugs(entry.answer);
+            }
+          } else if (ev.stage === 'error') {
+            entry.answer += '\n\n**Error:** ' + (ev.message || '');
+            if (isVisible()) {
+              answerEl.innerHTML = renderMarkdown(entry.answer);
+              renderMermaidBlocks(answerEl);
+              sync(true);
+              setProgressError(ev.message);
+            }
+          }
+        } catch (parseErr) {}
+      }
+    }
+    // Stream ended normally -- guarantee the final text lands in history,
+    // even if the throttle above had been holding back the last few writes.
+    sync(true);
+  } catch (e) {
+    if (stalledOut) {
+      entry.answer += '\n\n**Error:** No response from the server after two attempts.';
+      if (isVisible()) { answerEl.innerHTML = renderMarkdown(entry.answer); renderMermaidBlocks(answerEl); setProgressError('No response after retry'); }
+    } else if (e.name !== 'AbortError') {
+      entry.answer += '\n\n**Connection error:** ' + e.message;
+      if (isVisible()) { answerEl.innerHTML = renderMarkdown(entry.answer); renderMermaidBlocks(answerEl); setProgressError(e.message); }
+    } else if (isVisible()) {
+      progressDetail.textContent = 'Stopped';
+    }
+    sync(true);
+  } finally {
+    if (onUserAbort) abortCtrl.signal.removeEventListener('abort', onUserAbort);
+  }
+}
+
+async function doAsk() {
+  const question = qInput.value.trim();
+  if (!question) { qInput.focus(); return; }
+  if (abortCtrl) abortCtrl.abort();
+  btnAsk.disabled = true;
+  btnAsk.innerHTML = '<span class="spinner"></span> Running...';
+  btnStop.classList.remove('hidden');
+  answerEl.innerHTML = '';
+  showAllBugs();
+
+  const entry = { question, answer: '', bugId: activeBugId };
+  window.history.pushState({ ...entry }, '');
+  liveEntry = entry;
+  setProgressStage(0, 'Starting\u2026');
+
+  abortCtrl = new AbortController();
+  await doStream(question, entry);
+
+  btnAsk.disabled = false;
+  btnAsk.innerHTML = 'Ask';
+  btnStop.classList.add('hidden');
+  // Ask only reappears once the customer starts editing the question again
+  // (see the q-input "input" listener below).
+  btnAsk.classList.add('hidden');
+  abortCtrl = null;
+}
+
+// Stop just aborts the in-flight fetch; doStream's AbortError branch leaves
+// entry.answer (and whatever's on screen) exactly as it was, so the history
+// keeps whatever partial answer had streamed in so far.
+btnStop.addEventListener('click', () => { if (abortCtrl) abortCtrl.abort(); });
+
+btnAsk.addEventListener('click', () => { activeBugId = null; doAsk(); });
+qInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); activeBugId = null; doAsk(); }
+});
+// Ask only shows up while the customer is actively editing the question by
+// hand; skills/bug-click/browser back-forward all set the box
+// programmatically and keep it hidden, so this only fires on real typing.
+qInput.addEventListener('input', () => { btnAsk.classList.remove('hidden'); });
+
+// Sequenced, not parallel. Both `loadBugs` and `loadSkills` send the corpus id,
+// and at startup that id comes from localStorage -- where it may name a corpus
+// the server no longer serves, or one whose question list is a corpus behind.
+// `loadCorpora` is what repairs it, so it has to land first; fired together, the
+// other two go out against the stale id and the repair arrives too late to
+// matter.
+loadCorpora().then(() => { loadBugs(); loadSkills(); });
+initResizer();
+</script>
+</body>
+</html>
