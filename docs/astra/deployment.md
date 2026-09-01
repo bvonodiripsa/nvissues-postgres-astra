@@ -195,6 +195,45 @@ Bring-your-own-vault works too; its paths must begin with `/fusion/astra`.
 Promoting to prd means a new deployment with `-e prd` **and a new Prod Service
 Inference Hub key** — reusing the staging key is not authorised.
 
+## What has actually been run
+
+A full rehearsal on 2026-08-31: this repo's code and `config.yaml`, the
+Inference Hub models named in it, against a 999,198-bug corpus with 4,360,957
+chunk vectors. Only the database host differed — Azure Postgres in Sweden
+Central instead of the internal server, same schema and same content. Six
+questions, real answers on all six, none empty.
+
+What that proves and what it does not:
+
+| Verified | Still unproven |
+| --- | --- |
+| Retrieval works at 1M scale through this config | Reachability from an Astra pod to WFO |
+| Qwen3.5-397B answers correctly, thinking off | The image builds (needs x86 + Docker) |
+| No empty answers on any of six question shapes | Whether the WFO copy has all 999,198 rows |
+| Structured-filter, vector and link questions all answer | |
+
+**Latency needs reading carefully.** Warm mean was 19.8s per question, range
+8–38s, which is far above the 1.4–2.3s the co-located Container App achieves on
+the same corpus. That gap is distance, not the pipeline: a round trip from this
+machine to Sweden Central measures **170 ms median, and `select 1` costs the
+same as a real query**, so it is pure network rather than query work. The
+observed spread corresponds to roughly 100–120 round trips per question, which
+is the shape of this pipeline — vector search, full text, facets, links and
+chunk fetches.
+
+On Astra that term should largely vanish: PDX04 and a `usw` database are both
+on CorpNet in the same region, so the per-round-trip cost should be single-digit
+milliseconds instead of 170. The prediction is a few seconds per question, and
+the first `/v1/ask` on the deployed pod is what confirms or refutes it. If
+latency there is still tens of seconds, the cause is not distance and this
+rehearsal is the baseline to compare against.
+
+Two other measurements worth carrying forward. Startup spends ~107s warming the
+embedder, the pool and the LLM before the first question is served, so a
+readiness probe must allow for it or Kubernetes will restart the pod forever.
+And the answer model contributes only ~0.8s of the total, so nothing in the
+latency story is about the LLM.
+
 ## Open questions
 
 1. Is a Qwen id entitled on our key, and what does it cost in latency?
